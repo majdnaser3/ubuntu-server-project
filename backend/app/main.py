@@ -4,7 +4,11 @@ from sqlite3 import IntegrityError
 
 from app.config import APP_NAME, APP_VERSION
 from app.database import initialize_database
-from app.auth import register_user
+from app.auth import (
+    register_user,
+    authenticate_user,
+    create_access_token,
+)
 
 app = FastAPI(
     title=APP_NAME,
@@ -27,6 +31,9 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8, max_length=128)
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 @app.post("/register", status_code=201)
 def create_account(request: RegisterRequest):
@@ -50,4 +57,27 @@ def create_account(request: RegisterRequest):
         "id": user_id,
         "username": username,
         "message": "Account created successfully",
+    }
+
+@app.post("/login")
+def login(request: LoginRequest):
+    user = authenticate_user(
+        request.username.strip(),
+        request.password,
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+        )
+
+    token = create_access_token(
+        user["id"],
+        user["username"],
+    )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
     }
