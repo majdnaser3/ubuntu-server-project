@@ -18,6 +18,9 @@ from app.config import SECRET_KEY
 from app.file_storage import save_file
 from app.database import get_connection
 
+from fastapi.responses import FileResponse
+from app.file_storage import STORAGE_DIR
+
 app = FastAPI(
     title=APP_NAME,
     description="A private, multi-user personal cloud and file storage API.",
@@ -196,3 +199,35 @@ def list_files(user: dict = Depends(get_current_user)):
 
     finally:
         connection.close()
+
+@app.get("/files/{file_id}/download")
+def download_file(
+    file_id: int,
+    user: dict = Depends(get_current_user),
+):
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT original_filename, storage_filename
+            FROM files
+            WHERE id = ? AND user_id = ?
+            """,
+            (file_id, user["id"]),
+        ).fetchone()
+    finally:
+        connection.close()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = STORAGE_DIR / str(user["id"]) / row["storage_filename"]
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File missing from storage")
+
+    return FileResponse(
+        path=file_path,
+        filename=row["original_filename"],
+    )
