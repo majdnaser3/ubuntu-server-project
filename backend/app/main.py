@@ -1,25 +1,37 @@
-﻿from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+﻿import jwt
+
+from pathlib import Path
 from sqlite3 import IntegrityError
 
-from app.config import APP_NAME, APP_VERSION
-from app.database import initialize_database
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    UploadFile,
+    File,
+    Depends,
+)
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
+
+from app.config import (
+    APP_NAME,
+    APP_VERSION,
+    SECRET_KEY,
+)
+from app.database import (
+    initialize_database,
+    get_connection,
+)
 from app.auth import (
     register_user,
     authenticate_user,
     create_access_token,
 )
-from pathlib import Path
-from fastapi import UploadFile, File, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
-
-from app.config import SECRET_KEY
-from app.file_storage import save_file
-from app.database import get_connection
-
-from fastapi.responses import FileResponse
-from app.file_storage import STORAGE_DIR
+from app.file_storage import (
+    STORAGE_DIR,
+    save_file,
+)
 
 app = FastAPI(
     title=APP_NAME,
@@ -231,3 +243,39 @@ def download_file(
         path=file_path,
         filename=row["original_filename"],
     )
+
+@app.delete("/files/{file_id}")
+def delete_file(
+    file_id: int,
+    user: dict = Depends(get_current_user),
+):
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT storage_filename
+            FROM files
+            WHERE id = ? AND user_id = ?
+            """,
+            (file_id, user["id"]),
+        ).fetchone()
+
+        if row is None:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        file_path = STORAGE_DIR / str(user["id"]) / row["storage_filename"]
+
+        if file_path.is_file():
+            file_path.unlink()
+
+        connection.execute(
+            "DELETE FROM files WHERE id = ? AND user_id = ?",
+            (file_id, user["id"]),
+        )
+        connection.commit()
+
+        return {"message": "File deleted successfully"}
+
+    finally:
+        connection.close()
