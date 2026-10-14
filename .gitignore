@@ -1,0 +1,32 @@
+﻿# Private project planning PDFs — keep locally, never publish
+/plan01.pdf
+/plan11.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Secrets and local configuration
+secrets/
+*.pem
+*.key
+
+# Local databases and user files
+*.db
+*.sqlite
+*.sqlite3
+user_data/
+storage/
+
+# Build output
+build/
+dist/
+*.spec
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
