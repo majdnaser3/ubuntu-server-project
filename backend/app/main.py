@@ -175,3 +175,24 @@ async def upload_file(
         "size_bytes": len(content),
         "message": "File uploaded successfully",
     }
+
+@app.get("/files")
+def list_files(user: dict = Depends(get_current_user)):
+    connection = get_connection()
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, original_filename, content_type,
+                   size_bytes, created_at
+            FROM files
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        connection.close()
