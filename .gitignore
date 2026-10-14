@@ -7,6 +7,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+env/
 .env
 .env.*
 !.env.example
@@ -17,6 +18,7 @@ secrets/
 *.key
 
 # Local databases and user files
+data/
 *.db
 *.sqlite
 *.sqlite3
@@ -30,3 +32,11 @@ dist/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
