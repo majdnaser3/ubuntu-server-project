@@ -31,6 +31,21 @@ def initialize_database():
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                original_filename TEXT NOT NULL,
+                storage_filename TEXT NOT NULL UNIQUE,
+                content_type TEXT,
+                size_bytes INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
+
         connection.commit()
 
     finally:
