@@ -9,8 +9,10 @@ from fastapi import (
     UploadFile,
     File,
     Depends,
+    Request,
 )
-from fastapi.responses import FileResponse
+
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
@@ -18,6 +20,7 @@ from app.config import (
     APP_NAME,
     APP_VERSION,
     SECRET_KEY,
+    MAX_UPLOAD_SIZE_MB,
 )
 from app.database import (
     initialize_database,
@@ -38,6 +41,85 @@ app = FastAPI(
     description="A private, multi-user personal cloud and file storage API.",
     version=APP_VERSION,
 )
+
+
+@app.middleware("http")
+async def check_request_before_processing(request: Request, call_next):
+    path = request.url.path
+
+    # Protect all file-management endpoints.
+    if path == "/files" or path.startswith("/files/"):
+        authorization = request.headers.get("authorization", "")
+        parts = authorization.split()
+
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        try:
+            payload = jwt.decode(
+                parts[1],
+                SECRET_KEY,
+                algorithms=["HS256"],
+            )
+            user_id = int(payload["sub"])
+        except (jwt.InvalidTokenError, KeyError, ValueError):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or expired token"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        connection = get_connection()
+        try:
+            user = connection.execute(
+                "SELECT id FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        if user is None:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "User not found"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Reject clearly oversized upload requests before endpoint processing.
+        if request.method == "POST" and path == "/files/upload":
+            content_length = request.headers.get("content-length")
+
+            if content_length is not None:
+                try:
+                    request_size = int(content_length)
+                except ValueError:
+                    return JSONResponse(
+                        status_code=400,
+                        content={"detail": "Invalid Content-Length header"},
+                    )
+
+                max_request_size = (
+                    MAX_UPLOAD_SIZE_MB * 1024 * 1024
+                    + 1024 * 1024
+                )
+
+                if request_size > max_request_size:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": (
+                                f"Upload exceeds the "
+                                f"{MAX_UPLOAD_SIZE_MB} MB limit"
+                            )
+                        },
+                    )
+
+    return await call_next(request)
+
 
 @app.on_event("startup")
 def startup():
@@ -138,58 +220,97 @@ def login(request: LoginRequest):
         "token_type": "bearer",
     }
 
+
+
 @app.post("/files/upload", status_code=201)
 async def upload_file(
     uploaded_file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
-):
+    ):
     original_filename = Path(uploaded_file.filename or "").name
 
     if not original_filename:
-        raise HTTPException(status_code=400, detail="Filename is required")
-
-    content = await uploaded_file.read()
-
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty files are not allowed")
-
-    storage_filename = save_file(
-        user["id"],
-        original_filename,
-        content,
-    )
-
-    connection = get_connection()
-    try:
-        cursor = connection.execute(
-            """
-            INSERT INTO files (
-                user_id, original_filename, storage_filename,
-                content_type, size_bytes
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                user["id"],
-                original_filename,
-                storage_filename,
-                uploaded_file.content_type,
-                len(content),
-            ),
+        await uploaded_file.close()
+        raise HTTPException(
+            status_code=400,
+            detail="Filename is required",
         )
-        connection.commit()
-        file_id = cursor.lastrowid
-    finally:
-        connection.close()
 
-    await uploaded_file.close()
+    max_size_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+    try:
+        storage_filename, file_size = await save_file(
+            user["id"],
+            uploaded_file,
+            max_size_bytes,
+        )
+
+        if file_size == 0:
+            file_path = (
+                STORAGE_DIR / str(user["id"]) / storage_filename
+            )
+            file_path.unlink(missing_ok=True)
+
+            raise HTTPException(
+                status_code=400,
+                detail="Empty files are not allowed",
+            )
+
+        connection = get_connection()
+
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO files (
+                    user_id,
+                    original_filename,
+                    storage_filename,
+                    content_type,
+                    size_bytes
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    user["id"],
+                    original_filename,
+                    storage_filename,
+                    uploaded_file.content_type,
+                    file_size,
+                ),
+            )
+
+            connection.commit()
+            file_id = cursor.lastrowid
+
+        except Exception:
+            file_path = (
+                STORAGE_DIR / str(user["id"]) / storage_filename
+            )
+            file_path.unlink(missing_ok=True)
+            raise
+
+        finally:
+            connection.close()
+
+    except ValueError as error:
+        if "upload limit" in str(error):
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_SIZE_MB} MB upload limit",
+            )
+        raise
+
+    finally:
+        await uploaded_file.close()
 
     return {
         "id": file_id,
         "filename": original_filename,
-        "size_bytes": len(content),
+        "size_bytes": file_size,
         "message": "File uploaded successfully",
     }
+
+
 
 @app.get("/files")
 def list_files(user: dict = Depends(get_current_user)):

@@ -12,3 +12,7 @@ if not SECRET_KEY:
     )
 
 TOKEN_EXPIRE_MINUTES = 30
+
+MAX_UPLOAD_SIZE_MB = int(
+    os.environ.get("UBUNTU_SERVER_MAX_UPLOAD_MB", "500")
+)
