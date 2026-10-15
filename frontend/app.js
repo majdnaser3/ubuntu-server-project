@@ -74,3 +74,18 @@ loginForm.addEventListener("submit", async (event) => {
         console.error(error);
     }
 });
+
+
+const loginSection = document.getElementById("login-section");
+const registerSection = document.getElementById("register-section");
+
+document.getElementById("show-login").addEventListener("click", () => {
+    loginSection.hidden = false;
+    registerSection.hidden = true;
+});
+
+document.getElementById("show-register").addEventListener("click", () => {
+    loginSection.hidden = true;
+    registerSection.hidden = false;
+});
+

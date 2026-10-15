@@ -10,33 +10,42 @@
     <h1>My Private Cloud</h1>
     <p>Your personal file storage.</p>
 
+    
+<div class="auth-tabs">
+    <button type="button" id="show-login">Login</button>
+    <button type="button" id="show-register">Create Account</button>
+</div>
+
+<section id="login-section">
     <h2>Login</h2>
+    <form id="login-form">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required>
 
-<form id="login-form">
-    <label for="username">Username</label>
-    <input type="text" id="username" name="username" required>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
 
-    <label for="password">Password</label>
-    <input type="password" id="password" name="password" required>
+        <button type="submit">Login</button>
+        <p id="login-message"></p>
+    </form>
+</section>
 
-    <button type="submit">Login</button>
-    <p id="login-message"></p>
-</form>
+<section id="register-section" hidden>
+    <h2>Create Account</h2>
+    <form id="register-form">
+        <label for="register-username">Username</label>
+        <input type="text" id="register-username" name="username"
+               minlength="3" maxlength="50" required>
 
-<h2>Create Account</h2>
+        <label for="register-password">Password</label>
+        <input type="password" id="register-password" name="password"
+               minlength="8" maxlength="128" required>
 
-<form id="register-form">
-    <label for="register-username">Username</label>
-    <input type="text" id="register-username"
-           name="username" minlength="3" maxlength="50" required>
+        <button type="submit">Register</button>
+        <p id="register-message"></p>
+    </form>
+</section>
 
-    <label for="register-password">Password</label>
-    <input type="password" id="register-password"
-           name="password" minlength="8" maxlength="128" required>
-
-    <button type="submit">Register</button>
-    <p id="register-message"></p>
-</form>
 
 <script src="app.js"></script>
 </body>

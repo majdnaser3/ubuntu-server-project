@@ -21,3 +21,26 @@ button {
 button {
     cursor: pointer;
 }
+
+
+.auth-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.auth-tabs button {
+    flex: 1;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #f2f2f2;
+}
+
+.auth-tabs button:hover {
+    background: #e0e0e0;
+}
+
+#login-message,
+#register-message {
+    overflow-wrap: anywhere;
+}
