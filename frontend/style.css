@@ -44,3 +44,22 @@ button {
 #register-message {
     overflow-wrap: anywhere;
 }
+
+[hidden] {
+    display: none !important;
+}
+
+
+.password-field {
+    display: flex;
+    gap: 8px;
+}
+
+.password-field input {
+    flex: 1;
+    min-width: 0;
+}
+
+.password-field .toggle-password {
+    width: 75px;
+}

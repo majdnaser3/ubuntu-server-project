@@ -10,7 +10,7 @@
     <h1>My Private Cloud</h1>
     <p>Your personal file storage.</p>
 
-    
+<div id="auth-section">   
 <div class="auth-tabs">
     <button type="button" id="show-login">Login</button>
     <button type="button" id="show-register">Create Account</button>
@@ -23,7 +23,10 @@
         <input type="text" id="username" name="username" required>
 
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required>
+        <div class="password-field">
+            <input type="password" id="password" name="password" required>
+            <button type="button" class="toggle-password" data-target="password">Show</button>
+        </div>
 
         <button type="submit">Login</button>
         <p id="login-message"></p>
@@ -38,12 +41,32 @@
                minlength="3" maxlength="50" required>
 
         <label for="register-password">Password</label>
-        <input type="password" id="register-password" name="password"
-               minlength="8" maxlength="128" required>
+        <div class="password-field">
+            <input type="password" id="register-password" name="password"
+                minlength="8" maxlength="128" required>
+            <button type="button" class="toggle-password" data-target="register-password">Show</button>
+        </div>
 
         <button type="submit">Register</button>
         <p id="register-message"></p>
     </form>
+</section>
+</div>
+
+<section id="files-section" hidden>
+    <h2>My Files</h2>
+    <button type="button" id="logout-button">Log Out</button>
+    <form id="upload-form">
+    <input type="file" id="file-input" name="uploaded_file" required>
+    <button type="submit">Upload File</button>
+</form>
+<p id="upload-message"></p>
+
+    <button type="button" id="load-files">Refresh Files</button>
+
+    <p id="files-message"></p>
+
+    <ul id="files-list"></ul>
 </section>
 
 
