@@ -11,6 +11,7 @@ from fastapi import (
     Depends,
     Request,
 )
+from fastapi.staticfiles import StaticFiles
 
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -400,3 +401,6 @@ def delete_file(
 
     finally:
         connection.close()
+
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Private Cloud</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>My Private Cloud</h1>
+    <p>Your personal file storage.</p>
+
+    <h2>Login</h2>
+
+<form id="login-form">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required>
+
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required>
+
+    <button type="submit">Login</button>
+    <p id="login-message"></p>
+</form>
+
+<h2>Create Account</h2>
+
+<form id="register-form">
+    <label for="register-username">Username</label>
+    <input type="text" id="register-username"
+           name="username" minlength="3" maxlength="50" required>
+
+    <label for="register-password">Password</label>
+    <input type="password" id="register-password"
+           name="password" minlength="8" maxlength="128" required>
+
+    <button type="submit">Register</button>
+    <p id="register-message"></p>
+</form>
+
+<script src="app.js"></script>
+</body>
+</html>
