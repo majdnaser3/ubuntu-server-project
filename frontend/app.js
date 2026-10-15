@@ -151,22 +151,108 @@ async function loadFiles() {
 
         filesMessage.textContent = "";
 
-        for (const file of data) {
-            const item = document.createElement("li");
-            const size = file.size_bytes;
-            const units = ["B", "KB", "MB", "GB", "TB"];
-            let formattedSize = size;
-            let unitIndex = 0;
+        
+    for (const file of data) {
+        const item = document.createElement("li");
+        const fileInfo = document.createElement("span");
 
-            while (formattedSize >= 1024 && unitIndex < units.length - 1) {
-                formattedSize /= 1024;
-                unitIndex++;
+        const size = file.size_bytes;
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let formattedSize = size;
+        let unitIndex = 0;
+
+        while (formattedSize >= 1024 && unitIndex < units.length - 1) {
+            formattedSize /= 1024;
+            unitIndex++;
+        }
+
+        fileInfo.textContent =
+            `${file.original_filename} (${formattedSize.toFixed(2)} ${units[unitIndex]})`;
+
+        
+    item.appendChild(fileInfo);
+
+    const downloadButton = document.createElement("button");
+    downloadButton.textContent = "Download";
+    downloadButton.type = "button";
+
+    downloadButton.addEventListener("click", async () => {
+        const token = sessionStorage.getItem("access_token");
+
+        try {
+            const response = await fetch(`/files/${file.id}/download`, {
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                filesMessage.textContent = "Download failed.";
+                return;
             }
 
-            item.textContent =
-                `${file.original_filename} (${formattedSize.toFixed(2)} ${units[unitIndex]})`;
-            filesList.appendChild(item);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+
+            link.href = url;
+            link.download = file.original_filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) {
+            filesMessage.textContent = "Could not download the file.";
+            console.error(error);
         }
+    });
+
+    item.appendChild(downloadButton);
+    
+    const deleteButton = document.createElement("button");
+    deleteButton.textContent = "Delete";
+    deleteButton.type = "button";
+
+    deleteButton.addEventListener("click", async () => {
+        const confirmed = confirm(
+            `Are you sure you want to delete "${file.original_filename}"?`
+        );
+
+        if (!confirmed) return;
+
+        const token = sessionStorage.getItem("access_token");
+
+        try {
+            const response = await fetch(`/files/${file.id}`, {
+                method: "DELETE",
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                }
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                filesMessage.textContent =
+                    result.detail || "Could not delete the file.";
+                return;
+            }
+
+            filesMessage.textContent = "File deleted successfully.";
+            await loadFiles();
+        } catch (error) {
+            filesMessage.textContent = "Could not connect to the server.";
+            console.error(error);
+        }
+    });
+
+    item.appendChild(deleteButton);
+
+    filesList.appendChild(item);
+
+    }
+
     } catch (error) {
         filesMessage.textContent = "Could not connect to the server.";
         console.error(error);
