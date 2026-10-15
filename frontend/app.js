@@ -288,31 +288,68 @@ uploadForm.addEventListener("submit", async (event) => {
     const formData = new FormData();
     formData.append("uploaded_file", file);
 
-    try {
-        const response = await fetch("/files/upload", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`
-            },
-            body: formData
-        });
+    
+    const progressBar = document.getElementById("upload-progress");
+    const progressText = document.getElementById("upload-progress-text");
 
-        const data = await response.json();
+    const xhr = new XMLHttpRequest();
 
-        if (!response.ok) {
-            uploadMessage.textContent =
-                data.detail || "Upload failed.";
+    progressBar.value = 0;
+    progressBar.hidden = false;
+    progressText.hidden = false;
+    progressText.textContent = "Starting upload...";
+
+    xhr.open("POST", "/files/upload");
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+            const percent = Math.round(
+                (event.loaded / event.total) * 100
+            );
+
+            progressBar.value = percent;
+            progressText.textContent = `Uploading: ${percent}%`;
+        }
+    });
+
+    xhr.addEventListener("load", async () => {
+        let data = {};
+
+        try {
+            data = JSON.parse(xhr.responseText);
+        } catch {
+            data = {};
+        }
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+            uploadMessage.textContent = data.detail || "Upload failed.";
+            progressBar.hidden = true;
+            progressText.hidden = true;
             return;
         }
 
+        progressBar.value = 100;
+        progressText.textContent = "Upload complete!";
         uploadMessage.textContent = "File uploaded successfully!";
+
         uploadForm.reset();
         await loadFiles();
 
-    } catch (error) {
+        setTimeout(() => {
+            progressBar.hidden = true;
+            progressText.hidden = true;
+        }, 1500);
+    });
+
+    xhr.addEventListener("error", () => {
         uploadMessage.textContent = "Could not connect to the server.";
-        console.error(error);
-    }
+        progressBar.hidden = true;
+        progressText.hidden = true;
+    });
+
+    xhr.send(formData);
+
 });
 
 

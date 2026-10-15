@@ -63,3 +63,16 @@ button {
 .password-field .toggle-password {
     width: 75px;
 }
+
+
+#upload-progress {
+    width: 100%;
+    height: 18px;
+    margin-top: 8px;
+}
+
+#upload-progress-text {
+    margin: 0;
+    text-align: center;
+    font-size: 14px;
+}

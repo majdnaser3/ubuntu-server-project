@@ -58,6 +58,8 @@
     <button type="button" id="logout-button">Log Out</button>
     <form id="upload-form">
     <input type="file" id="file-input" name="uploaded_file" required>
+    <progress id="upload-progress" value="0" max="100" hidden></progress>
+    <p id="upload-progress-text" hidden></p>
     <button type="submit">Upload File</button>
 </form>
 <p id="upload-message"></p>
