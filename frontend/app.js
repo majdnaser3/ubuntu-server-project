@@ -277,6 +277,14 @@ uploadForm.addEventListener("submit", async (event) => {
         return;
     }
 
+    const MAX_UPLOAD_SIZE_MB = 500;
+    const maxUploadSizeBytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+
+    if (file.size > maxUploadSizeBytes) {
+        uploadMessage.textContent =
+            `File is too large. Maximum allowed size is ${MAX_UPLOAD_SIZE_MB} MiB.`;
+        return;
+    }
     const formData = new FormData();
     formData.append("uploaded_file", file);
 
