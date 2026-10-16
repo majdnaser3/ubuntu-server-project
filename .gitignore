@@ -1,6 +1,11 @@
-﻿# Private project planning PDFs — keep locally, never publish
+﻿
+# Private planning PDFs
 /plan01.pdf
 /plan11.pdf
+
+# Private project continuity documents (if added here)
+/PROJECT_STATE*
+/PROJECT_STATES*
 
 # Python
 __pycache__/
@@ -12,18 +17,21 @@ env/
 .env.*
 !.env.example
 
-# Secrets and local configuration
+# Secrets and private configuration
 secrets/
 *.pem
 *.key
 
 # Local databases and user files
 data/
+storage/
+user_data/
 *.db
 *.sqlite
 *.sqlite3
-user_data/
-storage/
+
+# Deployment archives
+deploy.tar.gz
 
 # Build output
 build/
@@ -40,3 +48,6 @@ dist/
 .coverage
 htmlcov/
 
+# Operating system files
+.DS_Store
+Thumbs.db
