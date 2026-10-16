@@ -194,7 +194,13 @@ async function loadFiles() {
                 return;
             }
 
-            window.location.href = data.download_url;
+            const downloadLink = document.createElement("a");
+            downloadLink.href = data.download_url;
+            downloadLink.target = "_blank";
+            downloadLink.rel = "noopener";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            downloadLink.remove();
         } catch (error) {
             filesMessage.textContent = "Could not download the file.";
             console.error(error);
