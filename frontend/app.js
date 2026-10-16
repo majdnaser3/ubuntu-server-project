@@ -180,33 +180,27 @@ async function loadFiles() {
         const token = sessionStorage.getItem("access_token");
 
         try {
-            const response = await fetch(`/files/${file.id}/download`, {
+            const response = await fetch(`/files/${file.id}/download-link`, {
+                method: "POST",
                 headers: {
                     "Authorization": `Bearer ${token}`
                 }
             });
 
+            const data = await response.json();
+
             if (!response.ok) {
-                filesMessage.textContent = "Download failed.";
+                filesMessage.textContent = data.detail || "Download failed.";
                 return;
             }
 
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-
-            link.href = url;
-            link.download = file.original_filename;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            window.location.href = data.download_url;
         } catch (error) {
             filesMessage.textContent = "Could not download the file.";
             console.error(error);
         }
     });
+
 
     item.appendChild(downloadButton);
     

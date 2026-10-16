@@ -1,4 +1,5 @@
 ﻿import jwt
+from datetime import datetime, timedelta, timezone
 
 from pathlib import Path
 from sqlite3 import IntegrityError
@@ -49,7 +50,13 @@ async def check_request_before_processing(request: Request, call_next):
     path = request.url.path
 
     # Protect all file-management endpoints.
-    if path == "/files" or path.startswith("/files/"):
+    if (
+    (path == "/files" or path.startswith("/files/"))
+    and not (
+        request.method == "GET"
+        and path.endswith("/download-direct")
+    )
+    ):
         authorization = request.headers.get("authorization", "")
         parts = authorization.split()
 
@@ -367,6 +374,105 @@ def download_file(
     )
 
 @app.delete("/files/{file_id}")
+
+
+@app.post("/files/{file_id}/download-link")
+def create_download_link(
+    file_id: int,
+    user: dict = Depends(get_current_user),
+):
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM files
+            WHERE id = ? AND user_id = ?
+            """,
+            (file_id, user["id"]),
+        ).fetchone()
+    finally:
+        connection.close()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=2)
+
+    token = jwt.encode(
+        {
+            "sub": str(user["id"]),
+            "file_id": file_id,
+            "purpose": "download",
+            "exp": expires_at,
+        },
+        SECRET_KEY,
+        algorithm="HS256",
+    )
+
+    return {
+        "download_url": f"/files/{file_id}/download-direct?token={token}"
+    }
+
+
+@app.get("/files/{file_id}/download-direct")
+def download_file_direct(file_id: int, token: str):
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=["HS256"],
+        )
+
+        if (
+            payload.get("purpose") != "download"
+            or int(payload["file_id"]) != file_id
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid download link",
+            )
+
+        user_id = int(payload["sub"])
+
+    except (jwt.InvalidTokenError, KeyError, ValueError) as error:
+        print(f"Download token validation failed: {type(error).__name__}: {error}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired download link",
+        )
+
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT original_filename, storage_filename
+            FROM files
+            WHERE id = ? AND user_id = ?
+            """,
+            (file_id, user_id),
+        ).fetchone()
+    finally:
+        connection.close()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = STORAGE_DIR / str(user_id) / row["storage_filename"]
+
+    if not file_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="File missing from storage",
+        )
+
+    return FileResponse(
+        path=file_path,
+        filename=row["original_filename"],
+    )
+
 def delete_file(
     file_id: int,
     user: dict = Depends(get_current_user),
