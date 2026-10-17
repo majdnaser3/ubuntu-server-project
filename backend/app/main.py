@@ -373,6 +373,8 @@ def download_file(
         filename=row["original_filename"],
     )
 
+@app.delete("/files/{file_id}")
+
 
 @app.post("/files/{file_id}/download-link")
 def create_download_link(
@@ -471,7 +473,6 @@ def download_file_direct(file_id: int, token: str):
         filename=row["original_filename"],
     )
 
-@app.delete("/files/{file_id}")
 def delete_file(
     file_id: int,
     user: dict = Depends(get_current_user),
