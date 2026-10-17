@@ -73,6 +73,57 @@ def check_server(url: str):
     return request_json(url, "/health")
 
 
+def upload_file_request(url: str, file_path: str, token: str):
+    import mimetypes
+    import os
+    import uuid
+
+    boundary = uuid.uuid4().hex
+    filename = os.path.basename(file_path)
+    content_type = (
+        mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+
+    with open(file_path, "rb") as f:
+        file_data = f.read()
+
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="uploaded_file"; '
+        f'filename="{filename}"\r\n'
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode() + file_data + f"\r\n--{boundary}--\r\n".encode()
+
+    request = urllib.request.Request(
+        f"{url}/files/upload",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = response.read().decode("utf-8")
+            return json.loads(result) if result else {}
+
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode("utf-8")).get(
+                "detail", f"HTTP {exc.code}"
+            )
+        except (ValueError, AttributeError):
+            detail = f"HTTP {exc.code}"
+        raise RuntimeError(str(detail)) from exc
+
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("Could not reach the server.") from exc
+
+
 async def main(page: ft.Page):
     page.title = "Ubuntu Server Client"
     page.theme_mode = ft.ThemeMode.SYSTEM
@@ -422,6 +473,61 @@ async def main(page: ft.Page):
             ],
         )
 
+        
+        async def upload_selected_file(e=None):
+            selected = await file_picker.pick_files(
+                allow_multiple=False
+            )
+
+            if not selected:
+                return
+
+            file_path = selected[0].path
+
+            if not file_path:
+                snackbar = ft.SnackBar(
+                    content=ft.Text("Could not access the selected file.")
+                )
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+                return
+
+            snackbar = ft.SnackBar(
+                content=ft.Text("Uploading file...")
+            )
+            page.overlay.append(snackbar)
+            snackbar.open = True
+            page.update()
+
+            try:
+                await asyncio.to_thread(
+                    upload_file_request,
+                    server_url,
+                    file_path,
+                    access_token,
+                )
+
+                snackbar = ft.SnackBar(
+                    content=ft.Text("File uploaded successfully!")
+                )
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+                await load_files()
+
+            except Exception as exc:
+                snackbar = ft.SnackBar(
+                    content=ft.Text(f"Upload failed: {exc}")
+                )
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+
+        file_picker = ft.FilePicker()
+        page.services.append(file_picker)
+
+
         page.add(
             ft.Column(
                 [
@@ -432,6 +538,11 @@ async def main(page: ft.Page):
                     ),
                     ft.Text("Files stored on your Ubuntu server"),
                     ft.Divider(),
+                    ft.Button(
+                    "Upload file",
+                    icon=ft.Icons.UPLOAD_FILE,
+                    on_click=upload_selected_file,
+                    ),
                     files_view,
                 ],
                 expand=True,
