@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/main.py
+src/ubuntu_server_client.egg-info/PKG-INFO
+src/ubuntu_server_client.egg-info/SOURCES.txt
+src/ubuntu_server_client.egg-info/dependency_links.txt
+src/ubuntu_server_client.egg-info/requires.txt
+src/ubuntu_server_client.egg-info/top_level.txt
+tests/test_main.py
