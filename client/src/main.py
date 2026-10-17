@@ -6,6 +6,7 @@ import urllib.request
 from urllib.parse import urlparse
 
 import flet as ft
+import queue
 
 
 SERVER_KEY = "com.majdnaser3.ubuntu_server_client.server_url"
@@ -123,6 +124,53 @@ def upload_file_request(url: str, file_path: str, token: str):
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("Could not reach the server.") from exc
 
+
+
+def download_file_to_path(
+    url: str,
+    file_id: int,
+    token: str,
+    destination: str,
+    progress_queue,
+):
+    request = urllib.request.Request(
+        f"{url}/files/{file_id}/download",
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            total_size = int(response.headers.get("Content-Length", 0))
+            downloaded = 0
+
+            with open(destination, "wb") as output:
+                while True:
+                    chunk = response.read(1024 * 1024)
+
+                    if not chunk:
+                        break
+
+                    output.write(chunk)
+                    downloaded += len(chunk)
+                    progress_queue.put((downloaded, total_size))
+
+            return downloaded
+
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(
+                exc.read().decode("utf-8")
+            ).get("detail", f"HTTP {exc.code}")
+        except (ValueError, AttributeError):
+            detail = f"HTTP {exc.code}"
+
+        raise RuntimeError(str(detail)) from exc
+
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("Could not reach the server.") from exc
 
 async def main(page: ft.Page):
     page.title = "Ubuntu Server Client"
@@ -367,6 +415,98 @@ async def main(page: ft.Page):
             expand=True,
         )
 
+        
+        async def download_selected_file(item):
+            file_id = item.get("id")
+            filename = item.get("original_filename", "download")
+
+            if file_id is None:
+                snackbar = ft.SnackBar(
+                    content=ft.Text("Could not identify this file.")
+                )
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+                return
+
+            try:
+                destination = await file_picker.save_file(
+                    file_name=filename,
+                )
+
+                if not destination:
+                    return
+
+                progress_queue = queue.Queue()
+                progress_bar = ft.ProgressBar(value=0)
+                progress_text = ft.Text("Preparing download...")
+
+                page.overlay.extend([progress_bar, progress_text])
+                page.update()
+                downloaded = 0
+                total_size = 0
+
+                download_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        download_file_to_path,
+                        server_url,
+                        file_id,
+                        access_token,
+                        destination,
+                        progress_queue,
+                    )
+                )
+
+                while not download_task.done() or not progress_queue.empty():
+                    try:
+                        while True:
+                            downloaded, total_size = progress_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+
+                    if total_size > 0:
+                        progress_bar.value = downloaded / total_size
+                        progress_text.value = (
+                            f"Downloading: {downloaded / total_size * 100:.0f}% "
+                            f"({downloaded / 1024**2:.1f} / "
+                            f"{total_size / 1024**2:.1f} MB)"
+                        )
+                    else:
+                        progress_text.value = (
+                            f"Downloaded {downloaded / 1024**2:.1f} MB"
+                        )
+
+                    page.update()
+                    await asyncio.sleep(0.1)
+
+                await download_task
+
+                page.overlay.remove(progress_bar)
+                page.overlay.remove(progress_text)
+                page.update()
+
+                snackbar = ft.SnackBar(
+                    content=ft.Text(f"File saved to: {destination}")
+                )
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+
+            except Exception as exc:
+                if 'progress_bar' in locals() and progress_bar in page.overlay:
+                    page.overlay.remove(progress_bar)
+
+                if 'progress_text' in locals() and progress_text in page.overlay:
+                    page.overlay.remove(progress_text)
+
+                page.update()
+                snackbar = ft.SnackBar(
+                    content=ft.Text(f"Download failed: {exc}")
+                )
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+
         async def load_files(e=None):
             files_view.controls = [
                 ft.ProgressRing(),
@@ -409,6 +549,7 @@ async def main(page: ft.Page):
                                             ft.Icons.INSERT_DRIVE_FILE,
                                             size=28,
                                         ),
+                                                                                
                                         ft.Column(
                                             [
                                                 ft.Text(
@@ -430,6 +571,14 @@ async def main(page: ft.Page):
                                             spacing=4,
                                             expand=True,
                                         ),
+                                        ft.IconButton(
+                                            icon=ft.Icons.DOWNLOAD,
+                                            tooltip="Download file",
+                                            on_click=lambda e, file_item=item: asyncio.create_task(
+                                                download_selected_file(file_item)
+                                            ),
+                                        ),
+
                                     ],
                                     spacing=12,
                                 ),
