@@ -243,7 +243,7 @@ async def main(page: ft.Page):
                 else:
                     access_token = result["access_token"]
                     current_username = name
-                    show_home()
+                    await show_home()
 
             except Exception as exc:
                 status.value = str(exc)
@@ -306,10 +306,109 @@ async def main(page: ft.Page):
         )
         page.update()
 
-    def show_home():
+    
+    async def show_home():
+        page.clean()
+
+        files_view = ft.Column(
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+        async def load_files(e=None):
+            files_view.controls = [
+                ft.ProgressRing(),
+                ft.Text("Loading your files..."),
+            ]
+            page.update()
+
+            try:
+                files = await asyncio.to_thread(
+                    request_json,
+                    server_url,
+                    "/files",
+                    None,
+                    access_token,
+                )
+
+                files_view.controls.clear()
+
+                if not files:
+                    files_view.controls.append(
+                        ft.Text("No files yet. Your storage is empty.")
+                    )
+                else:
+                    for item in files:
+                        size = item.get("size_bytes", 0)
+                        if size < 1024:
+                            size_text = f"{size} B"
+                        elif size < 1024**2:
+                            size_text = f"{size / 1024:.1f} KB"
+                        elif size < 1024**3:
+                            size_text = f"{size / 1024**2:.1f} MB"
+                        else:
+                            size_text = f"{size / 1024**3:.2f} GB"
+
+                        files_view.controls.append(
+                            ft.Container(
+                                content=ft.Row(
+                                    [
+                                        ft.Icon(
+                                            ft.Icons.INSERT_DRIVE_FILE,
+                                            size=28,
+                                        ),
+                                        ft.Column(
+                                            [
+                                                ft.Text(
+                                                    item.get(
+                                                        "original_filename",
+                                                        "Unnamed file",
+                                                    ),
+                                                    weight=ft.FontWeight.BOLD,
+                                                    max_lines=2,
+                                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                                    expand=True,
+                                                ),
+                                                ft.Text(
+                                                    f"{size_text}  •  "
+                                                    f"{item.get('created_at', '')}",
+                                                    size=12,
+                                                ),
+                                            ],
+                                            spacing=4,
+                                            expand=True,
+                                        ),
+                                    ],
+                                    spacing=12,
+                                ),
+                                padding=12,
+                                border=ft.Border.all(
+                                    1, ft.Colors.OUTLINE_VARIANT
+                                ),
+                                border_radius=10,
+                            )
+                        )
+
+            except Exception as exc:
+                files_view.controls = [
+                    ft.Text(
+                        f"Could not load files: {exc}",
+                        color=ft.Colors.RED,
+                    ),
+                    ft.Button("Try again", on_click=load_files),
+                ]
+
+            page.update()
+
         page.appbar = ft.AppBar(
-            title=ft.Text("Ubuntu Server"),
+            title=ft.Text("My Files"),
             actions=[
+                ft.IconButton(
+                    icon=ft.Icons.REFRESH,
+                    tooltip="Refresh files",
+                    on_click=load_files,
+                ),
                 ft.IconButton(
                     icon=ft.Icons.SETTINGS,
                     tooltip="Server settings",
@@ -322,35 +421,27 @@ async def main(page: ft.Page):
                 ),
             ],
         )
-        page.clean()
+
         page.add(
-            ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Icon(
-                            ft.Icons.CHECK_CIRCLE,
-                            size=56,
-                            color=ft.Colors.GREEN,
-                        ),
-                        ft.Text(
-                            f"Welcome, {current_username}!",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                        ),
-                        ft.Text("Connected to your Ubuntu server."),
-                        ft.Text(
-                            "Next, we'll add your file manager.",
-                            text_align=ft.TextAlign.CENTER,
-                        ),
-                    ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=16,
-                ),
-                alignment=ft.Alignment.CENTER,
+            ft.Column(
+                [
+                    ft.Text(
+                        f"Welcome, {current_username}!",
+                        size=22,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text("Files stored on your Ubuntu server"),
+                    ft.Divider(),
+                    files_view,
+                ],
                 expand=True,
+                spacing=12,
             )
         )
+
+        page.update()
+        await load_files()
+
         page.update()
 
     def logout():
