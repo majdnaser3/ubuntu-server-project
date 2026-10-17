@@ -6,6 +6,8 @@
 # Private project continuity documents (if added here)
 /PROJECT_STATE*
 /PROJECT_STATES*
+/PROJECT_STATUS.md
+/ROADMAP.md
 
 # Python
 __pycache__/
