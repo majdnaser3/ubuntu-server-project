@@ -32,7 +32,12 @@ def normalize_url(value: str) -> str:
     return value
 
 
-def request_json(url: str, path: str, payload=None, token=None):
+def request_json(
+    url: str,
+    path: str,
+    payload=None,
+    token=None,
+    method=None,):
     headers = {"Accept": "application/json"}
 
     data = None
@@ -47,7 +52,7 @@ def request_json(url: str, path: str, payload=None, token=None):
         f"{url}{path}",
         data=data,
         headers=headers,
-        method="POST" if payload is not None else "GET",
+        method=method or ("POST" if payload is not None else "GET"),
     )
 
     try:
@@ -506,7 +511,66 @@ async def main(page: ft.Page):
                 page.overlay.append(snackbar)
                 snackbar.open = True
                 page.update()
+        async def confirm_delete_file(item):
+            file_id = item.get("id")
+            filename = item.get("original_filename", "this file")
 
+            if file_id is None:
+                return
+
+            async def delete_file(e):
+                dialog.open = False
+                page.update()
+
+                try:
+                    await asyncio.to_thread(
+                        request_json,
+                        server_url,
+                        f"/files/{file_id}",
+                        None,
+                        access_token,
+                        "DELETE",
+                    )
+
+                    await load_files()
+
+                    snackbar = ft.SnackBar(
+                        content=ft.Text(f"Deleted: {filename}")
+                    )
+                except Exception as exc:
+                    snackbar = ft.SnackBar(
+                        content=ft.Text(f"Delete failed: {exc}")
+                    )
+
+                page.overlay.append(snackbar)
+                snackbar.open = True
+                page.update()
+
+            dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Delete file?"),
+                content=ft.Text(
+                    f'Are you sure you want to permanently delete "{filename}"?'
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Cancel",
+                        on_click=lambda e: close_dialog(),
+                    ),
+                    ft.TextButton(
+                        "Delete",
+                        on_click=delete_file,
+                    ),
+                ],
+            )
+
+            def close_dialog():
+                dialog.open = False
+                page.update()
+
+            page.overlay.append(dialog)
+            dialog.open = True
+            page.update()
         async def load_files(e=None):
             files_view.controls = [
                 ft.ProgressRing(),
@@ -576,6 +640,14 @@ async def main(page: ft.Page):
                                             tooltip="Download file",
                                             on_click=lambda e, file_item=item: asyncio.create_task(
                                                 download_selected_file(file_item)
+                                            ),
+                                        ),
+                                        ft.IconButton(
+                                            icon=ft.Icons.DELETE_OUTLINE,
+                                            tooltip="Delete file",
+                                            icon_color=ft.Colors.RED,
+                                            on_click=lambda e, file_item=item: asyncio.create_task(
+                                                confirm_delete_file(file_item)
                                             ),
                                         ),
 
