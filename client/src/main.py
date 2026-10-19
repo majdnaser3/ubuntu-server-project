@@ -79,27 +79,39 @@ def check_server(url: str):
     return request_json(url, "/health")
 
 
-def upload_file_request(url: str, file_path: str, token: str):
+
+def upload_file_request(
+    url: str,
+    file_path: str | None,
+    token: str,
+    file_bytes: bytes | None = None,
+    filename: str | None = None,
+):
     import mimetypes
     import os
     import uuid
 
-    boundary = uuid.uuid4().hex
-    filename = os.path.basename(file_path)
+    filename = filename or os.path.basename(file_path or "upload")
+
     content_type = (
         mimetypes.guess_type(filename)[0]
         or "application/octet-stream"
     )
 
-    with open(file_path, "rb") as f:
-        file_data = f.read()
+    if file_bytes is None:
+        if not file_path:
+            raise RuntimeError("Could not access the selected file.")
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+
+    boundary = uuid.uuid4().hex
 
     body = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="uploaded_file"; '
         f'filename="{filename}"\r\n'
         f"Content-Type: {content_type}\r\n\r\n"
-    ).encode() + file_data + f"\r\n--{boundary}--\r\n".encode()
+    ).encode() + file_bytes + f"\r\n--{boundary}--\r\n".encode()
 
     request = urllib.request.Request(
         f"{url}/files/upload",
@@ -131,18 +143,16 @@ def upload_file_request(url: str, file_path: str, token: str):
 
 
 
-def download_file_to_path(
+
+def download_file_to_bytes(
     url: str,
     file_id: int,
     token: str,
-    destination: str,
     progress_queue,
 ):
     request = urllib.request.Request(
         f"{url}/files/{file_id}/download",
-        headers={
-            "Authorization": f"Bearer {token}",
-        },
+        headers={"Authorization": f"Bearer {token}"},
         method="GET",
     )
 
@@ -150,19 +160,18 @@ def download_file_to_path(
         with urllib.request.urlopen(request, timeout=60) as response:
             total_size = int(response.headers.get("Content-Length", 0))
             downloaded = 0
+            file_data = bytearray()
 
-            with open(destination, "wb") as output:
-                while True:
-                    chunk = response.read(1024 * 1024)
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
 
-                    if not chunk:
-                        break
+                file_data.extend(chunk)
+                downloaded += len(chunk)
+                progress_queue.put((downloaded, total_size))
 
-                    output.write(chunk)
-                    downloaded += len(chunk)
-                    progress_queue.put((downloaded, total_size))
-
-            return downloaded
+            return bytes(file_data)
 
     except urllib.error.HTTPError as exc:
         try:
@@ -176,6 +185,7 @@ def download_file_to_path(
 
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("Could not reach the server.") from exc
+
 
 async def main(page: ft.Page):
     page.title = "Ubuntu Server Client"
@@ -435,29 +445,22 @@ async def main(page: ft.Page):
                 return
 
             try:
-                destination = await file_picker.save_file(
-                    file_name=filename,
-                )
-
-                if not destination:
-                    return
-
                 progress_queue = queue.Queue()
                 progress_bar = ft.ProgressBar(value=0)
                 progress_text = ft.Text("Preparing download...")
 
                 page.overlay.extend([progress_bar, progress_text])
                 page.update()
+
                 downloaded = 0
                 total_size = 0
 
                 download_task = asyncio.create_task(
                     asyncio.to_thread(
-                        download_file_to_path,
+                        download_file_to_bytes,
                         server_url,
                         file_id,
                         access_token,
-                        destination,
                         progress_queue,
                     )
                 )
@@ -484,18 +487,27 @@ async def main(page: ft.Page):
                     page.update()
                     await asyncio.sleep(0.1)
 
-                await download_task
+                file_bytes = await download_task
 
                 page.overlay.remove(progress_bar)
                 page.overlay.remove(progress_text)
                 page.update()
 
+                destination = await file_picker.save_file(
+                    file_name=filename,
+                    src_bytes=file_bytes,
+                )
+
+                if destination is None:
+                    return
+
                 snackbar = ft.SnackBar(
-                    content=ft.Text(f"File saved to: {destination}")
+                    content=ft.Text(f"File saved: {filename}")
                 )
                 page.overlay.append(snackbar)
                 snackbar.open = True
                 page.update()
+
 
             except Exception as exc:
                 if 'progress_bar' in locals() and progress_bar in page.overlay:
@@ -697,15 +709,18 @@ async def main(page: ft.Page):
         
         async def upload_selected_file(e=None):
             selected = await file_picker.pick_files(
-                allow_multiple=False
+                allow_multiple=False,
+                with_data=True,
             )
 
             if not selected:
                 return
 
-            file_path = selected[0].path
+            file = selected[0]
+            file_path = file.path
+            file_bytes = file.bytes
 
-            if not file_path:
+            if file_bytes is None and not file_path:
                 snackbar = ft.SnackBar(
                     content=ft.Text("Could not access the selected file.")
                 )
@@ -727,6 +742,8 @@ async def main(page: ft.Page):
                     server_url,
                     file_path,
                     access_token,
+                    file_bytes,
+                    file.name,
                 )
 
                 snackbar = ft.SnackBar(
