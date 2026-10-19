@@ -119,6 +119,7 @@ document.getElementById("show-register").addEventListener("click", () => {
 const filesList = document.getElementById("files-list");
 const filesMessage = document.getElementById("files-message");
 
+
 async function loadFiles() {
     const token = sessionStorage.getItem("access_token");
 
@@ -151,113 +152,132 @@ async function loadFiles() {
 
         filesMessage.textContent = "";
 
-        
-    for (const file of data) {
-        const item = document.createElement("li");
-        const fileInfo = document.createElement("span");
+        for (const file of data) {
+            const item = document.createElement("li");
+            item.className = "file-row";
 
-        const size = file.size_bytes;
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let formattedSize = size;
-        let unitIndex = 0;
+            
+            const fileInfo = document.createElement("div");
+            fileInfo.className = "file-name";
 
-        while (formattedSize >= 1024 && unitIndex < units.length - 1) {
-            formattedSize /= 1024;
-            unitIndex++;
-        }
+            const nameText = document.createElement("div");
+            nameText.className = "file-name-text";
+            nameText.textContent = file.original_filename;
+            nameText.title = file.original_filename;
 
-        fileInfo.textContent =
-            `${file.original_filename} (${formattedSize.toFixed(2)} ${units[unitIndex]})`;
+            const sizeText = document.createElement("div");
+            sizeText.className = "file-size";
 
-        
-    item.appendChild(fileInfo);
+            const size = file.size_bytes;
+            const units = ["B", "KB", "MB", "GB", "TB"];
+            let formattedSize = size;
+            let unitIndex = 0;
 
-    const downloadButton = document.createElement("button");
-    downloadButton.textContent = "Download";
-    downloadButton.type = "button";
+            while (formattedSize >= 1024 && unitIndex < units.length - 1) {
+                formattedSize /= 1024;
+                unitIndex++;
+            }
 
-    downloadButton.addEventListener("click", async () => {
-        const token = sessionStorage.getItem("access_token");
+            sizeText.textContent =
+                `${formattedSize.toFixed(2)} ${units[unitIndex]}`;
 
-        try {
-            const response = await fetch(`/files/${file.id}/download-link`, {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${token}`
+            fileInfo.append(nameText, sizeText);
+
+
+            const actions = document.createElement("div");
+            actions.className = "file-actions";
+
+            const downloadButton = document.createElement("button");
+            downloadButton.textContent = "Download";
+            downloadButton.type = "button";
+            downloadButton.className = "download-button";
+
+            downloadButton.addEventListener("click", async () => {
+                const currentToken = sessionStorage.getItem("access_token");
+
+                try {
+                    const downloadResponse = await fetch(
+                        `/files/${file.id}/download-link`,
+                        {
+                            method: "POST",
+                            headers: {
+                                "Authorization": `Bearer ${currentToken}`
+                            }
+                        }
+                    );
+
+                    const downloadData = await downloadResponse.json();
+
+                    if (!downloadResponse.ok) {
+                        filesMessage.textContent =
+                            downloadData.detail || "Download failed.";
+                        return;
+                    }
+
+                    const downloadLink = document.createElement("a");
+                    downloadLink.href = downloadData.download_url;
+                    downloadLink.target = "_blank";
+                    downloadLink.rel = "noopener";
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    downloadLink.remove();
+                } catch (error) {
+                    filesMessage.textContent = "Could not download the file.";
+                    console.error(error);
                 }
             });
 
-            const data = await response.json();
+            const deleteButton = document.createElement("button");
+            deleteButton.textContent = "Delete";
+            deleteButton.type = "button";
+            deleteButton.className = "delete-button";
 
-            if (!response.ok) {
-                filesMessage.textContent = data.detail || "Download failed.";
-                return;
-            }
+            deleteButton.addEventListener("click", async () => {
+                const confirmed = confirm(
+                    `Are you sure you want to delete "${file.original_filename}"?`
+                );
 
-            const downloadLink = document.createElement("a");
-            downloadLink.href = data.download_url;
-            downloadLink.target = "_blank";
-            downloadLink.rel = "noopener";
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            downloadLink.remove();
-        } catch (error) {
-            filesMessage.textContent = "Could not download the file.";
-            console.error(error);
-        }
-    });
+                if (!confirmed) return;
 
+                const currentToken = sessionStorage.getItem("access_token");
 
-    item.appendChild(downloadButton);
-    
-    const deleteButton = document.createElement("button");
-    deleteButton.textContent = "Delete";
-    deleteButton.type = "button";
+                try {
+                    const deleteResponse = await fetch(
+                        `/files/${file.id}`,
+                        {
+                            method: "DELETE",
+                            headers: {
+                                "Authorization": `Bearer ${currentToken}`
+                            }
+                        }
+                    );
 
-    deleteButton.addEventListener("click", async () => {
-        const confirmed = confirm(
-            `Are you sure you want to delete "${file.original_filename}"?`
-        );
+                    const result = await deleteResponse.json();
 
-        if (!confirmed) return;
+                    if (!deleteResponse.ok) {
+                        filesMessage.textContent =
+                            result.detail || "Could not delete the file.";
+                        return;
+                    }
 
-        const token = sessionStorage.getItem("access_token");
-
-        try {
-            const response = await fetch(`/files/${file.id}`, {
-                method: "DELETE",
-                headers: {
-                    "Authorization": `Bearer ${token}`
+                    filesMessage.textContent = "File deleted successfully.";
+                    await loadFiles();
+                } catch (error) {
+                    filesMessage.textContent = "Could not connect to the server.";
+                    console.error(error);
                 }
             });
 
-            const result = await response.json();
-
-            if (!response.ok) {
-                filesMessage.textContent =
-                    result.detail || "Could not delete the file.";
-                return;
-            }
-
-            filesMessage.textContent = "File deleted successfully.";
-            await loadFiles();
-        } catch (error) {
-            filesMessage.textContent = "Could not connect to the server.";
-            console.error(error);
+            actions.append(downloadButton, deleteButton);
+            item.append(fileInfo, actions);
+            filesList.appendChild(item);
         }
-    });
-
-    item.appendChild(deleteButton);
-
-    filesList.appendChild(item);
-
-    }
-
     } catch (error) {
         filesMessage.textContent = "Could not connect to the server.";
         console.error(error);
     }
 }
+
 
 document.getElementById("load-files").addEventListener("click", loadFiles);
 
