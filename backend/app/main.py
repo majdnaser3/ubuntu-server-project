@@ -354,12 +354,17 @@ def login(request: LoginRequest):
     }
 
 
+
 @app.get("/files/storage")
 def get_storage_usage(user: dict = Depends(get_current_user)):
     connection = get_connection()
     try:
         user_row = connection.execute(
-            "SELECT storage_quota_bytes FROM users WHERE id = ?",
+            """
+            SELECT storage_quota_bytes, max_upload_size_bytes
+            FROM users
+            WHERE id = ?
+            """,
             (user["id"],),
         ).fetchone()
 
@@ -382,9 +387,12 @@ def get_storage_usage(user: dict = Depends(get_current_user)):
             "quota_bytes": quota_bytes,
             "used_bytes": used_bytes,
             "remaining_bytes": max(0, quota_bytes - used_bytes),
+            "max_upload_size_bytes": user_row["max_upload_size_bytes"],
+            "server_max_upload_size_bytes": MAX_UPLOAD_SIZE_MB * 1024 * 1024,
         }
     finally:
         connection.close()
+
 
 
 @app.post("/files/upload", status_code=201)
@@ -396,20 +404,14 @@ async def upload_file(
 
     if not original_filename:
         await uploaded_file.close()
-        raise HTTPException(
-            status_code=400,
-            detail="Filename is required",
-        )
-
-    max_size_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        raise HTTPException(status_code=400, detail="Filename is required")
 
     try:
         connection = get_connection()
-
         try:
             user_row = connection.execute(
                 """
-                SELECT storage_quota_bytes
+                SELECT storage_quota_bytes, max_upload_size_bytes
                 FROM users
                 WHERE id = ?
                 """,
@@ -417,12 +419,7 @@ async def upload_file(
             ).fetchone()
 
             if user_row is None:
-                raise HTTPException(
-                    status_code=401,
-                    detail="User account not found",
-                )
-
-            quota_bytes = user_row["storage_quota_bytes"]
+                raise HTTPException(status_code=401, detail="User account not found")
 
             usage_row = connection.execute(
                 """
@@ -433,29 +430,34 @@ async def upload_file(
                 (user["id"],),
             ).fetchone()
 
+            quota_bytes = user_row["storage_quota_bytes"]
+            user_file_limit = user_row["max_upload_size_bytes"]
             used_bytes = usage_row["used_bytes"]
-
         finally:
             connection.close()
 
-        if used_bytes >= quota_bytes:
+        remaining_bytes = max(0, quota_bytes - used_bytes)
+
+        if remaining_bytes == 0:
             raise HTTPException(
                 status_code=413,
                 detail="Your storage quota is full. Delete some files or contact the administrator.",
             )
 
-        remaining_bytes = quota_bytes - used_bytes
-        effective_max_size = min(max_size_bytes, remaining_bytes)
+        server_file_limit = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        effective_limit = min(
+            server_file_limit,
+            user_file_limit,
+            remaining_bytes,
+        )
 
         storage_filename, file_size = await save_file(
             user["id"],
             uploaded_file,
-            effective_max_size,
+            effective_limit,
         )
 
-        file_path = (
-            STORAGE_DIR / str(user["id"]) / storage_filename
-        )
+        file_path = STORAGE_DIR / str(user["id"]) / storage_filename
 
         if file_size == 0:
             file_path.unlink(missing_ok=True)
@@ -465,7 +467,6 @@ async def upload_file(
             )
 
         connection = get_connection()
-
         try:
             cursor = connection.execute(
                 """
@@ -486,14 +487,11 @@ async def upload_file(
                     file_size,
                 ),
             )
-
             connection.commit()
             file_id = cursor.lastrowid
-
         except Exception:
             file_path.unlink(missing_ok=True)
             raise
-
         finally:
             connection.close()
 
@@ -501,10 +499,12 @@ async def upload_file(
         if "upload limit" in str(error).lower():
             raise HTTPException(
                 status_code=413,
-                detail="The file exceeds your remaining storage quota or the server's per-file upload limit.",
+                detail=(
+                    "File exceeds your per-file upload limit "
+                    "or your remaining storage quota."
+                ),
             )
         raise
-
     finally:
         await uploaded_file.close()
 
@@ -514,7 +514,6 @@ async def upload_file(
         "size_bytes": file_size,
         "message": "File uploaded successfully",
     }
-
 
 
 
@@ -705,42 +704,101 @@ def delete_file(
     finally:
         connection.close()
 
-@app.get("/admin/users")
-def admin_list_users(admin: dict = Depends(get_current_admin)):
-    connection = get_connection()
 
+@app.get("/admin/users")
+def list_users(admin: dict = Depends(get_current_admin)):
+    connection = get_connection()
     try:
         rows = connection.execute(
             """
             SELECT
-                users.id,
-                users.username,
-                users.created_at,
-                users.is_admin,
-                COUNT(files.id) AS file_count,
-                COALESCE(SUM(files.size_bytes), 0) AS storage_used_bytes
-            FROM users
-            LEFT JOIN files ON files.user_id = users.id
-            GROUP BY users.id
-            ORDER BY users.id
+                u.id,
+                u.username,
+                u.created_at,
+                u.is_admin,
+                u.storage_quota_bytes,
+                u.max_upload_size_bytes,
+                COUNT(f.id) AS file_count,
+                COALESCE(SUM(f.size_bytes), 0) AS storage_used_bytes
+            FROM users AS u
+            LEFT JOIN files AS f ON f.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.id
             """
         ).fetchall()
 
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+class UpdateUserLimitsRequest(BaseModel):
+    storage_quota_bytes: int | None = Field(default=None, gt=0)
+    max_upload_size_bytes: int | None = Field(default=None, gt=0)
+
+
+@app.patch("/admin/users/{user_id}/limits")
+def update_user_limits(
+    user_id: int,
+    request: UpdateUserLimitsRequest,
+    admin: dict = Depends(get_current_admin),
+):
+    if (
+        request.storage_quota_bytes is None
+        and request.max_upload_size_bytes is None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one storage limit to update",
+        )
+
+    connection = get_connection()
+    try:
+        user_row = connection.execute(
+            "SELECT id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if user_row is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        updates = []
+        values = []
+
+        if request.storage_quota_bytes is not None:
+            updates.append("storage_quota_bytes = ?")
+            values.append(request.storage_quota_bytes)
+
+        if request.max_upload_size_bytes is not None:
+            updates.append("max_upload_size_bytes = ?")
+            values.append(request.max_upload_size_bytes)
+
+        values.append(user_id)
+
+        connection.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            values,
+        )
+        connection.commit()
+
+        updated_user = connection.execute(
+            """
+            SELECT username, storage_quota_bytes, max_upload_size_bytes
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
         return {
-            "users": [
-                {
-                    "id": row["id"],
-                    "username": row["username"],
-                    "created_at": row["created_at"],
-                    "is_admin": bool(row["is_admin"]),
-                    "file_count": row["file_count"],
-                    "storage_used_bytes": row["storage_used_bytes"],
-                }
-                for row in rows
-            ]
+            "username": updated_user["username"],
+            "storage_quota_bytes": updated_user["storage_quota_bytes"],
+            "max_upload_size_bytes": updated_user["max_upload_size_bytes"],
+            "message": "User limits updated successfully",
         }
     finally:
         connection.close()
+
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

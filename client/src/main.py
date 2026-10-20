@@ -87,60 +87,90 @@ def upload_file_request(
     file_bytes: bytes | None = None,
     filename: str | None = None,
 ):
+    import http.client
     import mimetypes
     import os
+    import ssl
     import uuid
 
-    filename = filename or os.path.basename(file_path or "upload")
+    if not file_path or not os.path.isfile(file_path):
+        raise RuntimeError("Could not access the selected file.")
 
+    filename = filename or os.path.basename(file_path)
     content_type = (
         mimetypes.guess_type(filename)[0]
         or "application/octet-stream"
     )
 
-    if file_bytes is None:
-        if not file_path:
-            raise RuntimeError("Could not access the selected file.")
-        with open(file_path, "rb") as f:
-            file_bytes = f.read()
-
     boundary = uuid.uuid4().hex
-
-    body = (
+    header = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="uploaded_file"; '
         f'filename="{filename}"\r\n'
         f"Content-Type: {content_type}\r\n\r\n"
-    ).encode() + file_bytes + f"\r\n--{boundary}--\r\n".encode()
+    ).encode("utf-8")
+    footer = f"\r\n--{boundary}--\r\n".encode("utf-8")
 
-    request = urllib.request.Request(
-        f"{url}/files/upload",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
+    parsed = urlparse(url)
+    request_path = (parsed.path.rstrip("/") or "") + "/files/upload"
+    file_size = os.path.getsize(file_path)
+    content_length = len(header) + file_size + len(footer)
+
+    if parsed.scheme == "https":
+        connection = http.client.HTTPSConnection(
+            parsed.hostname,
+            parsed.port,
+            timeout=60,
+            context=ssl.create_default_context(),
+        )
+    elif parsed.scheme == "http":
+        connection = http.client.HTTPConnection(
+            parsed.hostname,
+            parsed.port,
+            timeout=60,
+        )
+    else:
+        raise RuntimeError("Unsupported server URL scheme.")
 
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            result = response.read().decode("utf-8")
-            return json.loads(result) if result else {}
+        connection.putrequest("POST", request_path)
+        connection.putheader("Authorization", f"Bearer {token}")
+        connection.putheader(
+            "Content-Type",
+            f"multipart/form-data; boundary={boundary}",
+        )
+        connection.putheader("Content-Length", str(content_length))
+        connection.putheader("Accept", "application/json")
+        connection.endheaders()
 
-    except urllib.error.HTTPError as exc:
+        connection.send(header)
+
+        with open(file_path, "rb") as file:
+            while True:
+                chunk = file.read(1024 * 1024)
+                if not chunk:
+                    break
+                connection.send(chunk)
+
+        connection.send(footer)
+        response = connection.getresponse()
+        result = response.read().decode("utf-8")
+
         try:
-            detail = json.loads(exc.read().decode("utf-8")).get(
-                "detail", f"HTTP {exc.code}"
-            )
-        except (ValueError, AttributeError):
-            detail = f"HTTP {exc.code}"
-        raise RuntimeError(str(detail)) from exc
+            body = json.loads(result) if result else {}
+        except ValueError:
+            body = {}
 
-    except (urllib.error.URLError, TimeoutError) as exc:
-        raise RuntimeError("Could not reach the server.") from exc
+        if response.status >= 400:
+            detail = body.get("detail", f"HTTP {response.status}")
+            raise RuntimeError(str(detail))
 
+        return body
+
+    except (http.client.HTTPException, OSError) as exc:
+        raise RuntimeError(f"Upload connection failed: {exc}") from exc
+    finally:
+        connection.close()
 
 
 
@@ -707,42 +737,85 @@ async def main(page: ft.Page):
         )
 
         
+        
         async def upload_selected_file(e=None):
+            import os
+
             selected = await file_picker.pick_files(
                 allow_multiple=False,
-                with_data=True,
+                with_data=False,
             )
 
             if not selected:
                 return
 
+            
             file = selected[0]
             file_path = file.path
-            file_bytes = file.bytes
 
-            if file_bytes is None and not file_path:
+            try:
+                if not file_path or not os.path.isfile(file_path):
+                    raise RuntimeError(
+                        "Could not access the selected file's path."
+                    )
+
+                file_size = os.path.getsize(file_path)
+
+                limits = await asyncio.to_thread(
+                    request_json,
+                    server_url,
+                    "/files/storage",
+                    None,
+                    access_token,
+                )
+
+                remaining_bytes = limits["remaining_bytes"]
+                user_file_limit = limits["max_upload_size_bytes"]
+                server_file_limit = limits[
+                    "server_max_upload_size_bytes"
+                ]
+
+                effective_limit = min(
+                    remaining_bytes,
+                    user_file_limit,
+                    server_file_limit,
+                )
+
+                if file_size > effective_limit:
+                    if remaining_bytes < min(
+                        user_file_limit, server_file_limit
+                    ):
+                        message = (
+                            "Not enough storage space. "
+                            f"{remaining_bytes / 1024**2:.2f} MiB remaining."
+                        )
+                    else:
+                        message = (
+                            "File exceeds the upload limit. "
+                            f"Maximum allowed: "
+                            f"{effective_limit / 1024**2:.2f} MiB."
+                        )
+
+                    snackbar = ft.SnackBar(content=ft.Text(message))
+                    page.overlay.append(snackbar)
+                    snackbar.open = True
+                    page.update()
+                    return
+
+
                 snackbar = ft.SnackBar(
-                    content=ft.Text("Could not access the selected file.")
+                    content=ft.Text("Uploading file...")
                 )
                 page.overlay.append(snackbar)
                 snackbar.open = True
                 page.update()
-                return
 
-            snackbar = ft.SnackBar(
-                content=ft.Text("Uploading file...")
-            )
-            page.overlay.append(snackbar)
-            snackbar.open = True
-            page.update()
-
-            try:
                 await asyncio.to_thread(
                     upload_file_request,
                     server_url,
                     file_path,
                     access_token,
-                    file_bytes,
+                    None,
                     file.name,
                 )
 
@@ -752,6 +825,7 @@ async def main(page: ft.Page):
                 page.overlay.append(snackbar)
                 snackbar.open = True
                 page.update()
+
                 await load_files()
 
             except Exception as exc:
@@ -761,6 +835,7 @@ async def main(page: ft.Page):
                 page.overlay.append(snackbar)
                 snackbar.open = True
                 page.update()
+
 
         file_picker = ft.FilePicker()
         page.services.append(file_picker)

@@ -128,6 +128,8 @@ async function loadFiles() {
         return;
     }
 
+    await loadAdminUsers();
+
     try {
         const response = await fetch("/files", {
             headers: {
@@ -298,15 +300,6 @@ uploadForm.addEventListener("submit", async (event) => {
     }
 
     
-    const MAX_UPLOAD_SIZE_MB = 500;
-    const maxUploadSizeBytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
-
-    if (file.size > maxUploadSizeBytes) {
-        uploadMessage.textContent =
-            `File is too large. Maximum allowed size is ${MAX_UPLOAD_SIZE_MB} MiB.`;
-        return;
-    }
-
     let storageData;
 
     try {
@@ -320,15 +313,38 @@ uploadForm.addEventListener("submit", async (event) => {
 
         if (!storageResponse.ok) {
             uploadMessage.textContent =
-                storageData.detail || "Could not check your storage quota.";
+                storageData.detail || "Could not check your upload limits.";
             return;
         }
     } catch (error) {
         uploadMessage.textContent =
-            "Could not check your storage quota. Please try again.";
+            "Could not check your upload limits. Please try again.";
         console.error(error);
         return;
     }
+
+    const effectiveFileLimit = Math.min(
+        storageData.max_upload_size_bytes,
+        storageData.server_max_upload_size_bytes
+    );
+
+    if (file.size > effectiveFileLimit) {
+        const limitMiB = (effectiveFileLimit / (1024 * 1024)).toFixed(2);
+
+        uploadMessage.textContent =
+            `File is too large. Your maximum single-file upload is ${limitMiB} MiB.`;
+        return;
+    }
+
+    if (file.size > storageData.remaining_bytes) {
+        const remainingMiB =
+            (storageData.remaining_bytes / (1024 * 1024)).toFixed(2);
+
+        uploadMessage.textContent =
+            `Not enough storage space. You have ${remainingMiB} MiB remaining.`;
+        return;
+    }
+
 
     if (file.size > storageData.remaining_bytes) {
         const remainingMiB =
@@ -517,3 +533,143 @@ setupForm.addEventListener("submit", async (event) => {
 });
 
 checkSetupStatus();
+
+
+async function loadAdminUsers() {
+    const section = document.getElementById("admin-section");
+    const usersList = document.getElementById("admin-users-list");
+    const message = document.getElementById("admin-message");
+    const token = sessionStorage.getItem("access_token");
+
+    section.hidden = true;
+    usersList.replaceChildren();
+
+    if (!token) return;
+
+    try {
+        const response = await fetch("/admin/users", {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status !== 401 && response.status !== 403) {
+                message.textContent = "Could not load administrator settings.";
+            }
+            return;
+        }
+
+        const users = await response.json();
+        section.hidden = false;
+        message.textContent = "";
+
+        for (const user of users) {
+            const card = document.createElement("div");
+            card.className = "admin-user-card";
+
+            const heading = document.createElement("h3");
+            heading.textContent = `${user.username} (ID: ${user.id})`;
+
+            const usage = document.createElement("p");
+            const usedGB = user.storage_used_bytes / 1_000_000_000;
+            const quotaGB = user.storage_quota_bytes / 1_000_000_000;
+
+            usage.textContent =
+                `Storage used: ${usedGB.toFixed(3)} GB of ${quotaGB.toFixed(3)} GB · Files: ${user.file_count}`;
+
+            const form = document.createElement("form");
+
+            const quotaLabel = document.createElement("label");
+            quotaLabel.textContent = "Storage quota (GB)";
+            const quotaInput = document.createElement("input");
+            quotaInput.type = "number";
+            quotaInput.min = "0.01";
+            quotaInput.step = "0.01";
+            quotaInput.required = true;
+            quotaInput.value = quotaGB;
+
+            const uploadLabel = document.createElement("label");
+            uploadLabel.textContent = "Maximum single-file upload (MiB)";
+            const uploadInput = document.createElement("input");
+            uploadInput.type = "number";
+            uploadInput.min = "1";
+            uploadInput.step = "1";
+            uploadInput.required = true;
+            uploadInput.value =
+                user.max_upload_size_bytes / (1024 * 1024);
+
+            const saveButton = document.createElement("button");
+            saveButton.type = "submit";
+            saveButton.textContent = "Save limits";
+
+            const status = document.createElement("p");
+            status.setAttribute("role", "status");
+
+            quotaLabel.appendChild(quotaInput);
+            uploadLabel.appendChild(uploadInput);
+            form.append(quotaLabel, uploadLabel, saveButton, status);
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                saveButton.disabled = true;
+                status.textContent = "Saving...";
+
+                const storageQuota = Number(quotaInput.value);
+                const maxUploadMiB = Number(uploadInput.value);
+
+                if (
+                    !Number.isFinite(storageQuota) ||
+                    !Number.isFinite(maxUploadMiB) ||
+                    storageQuota <= 0 ||
+                    maxUploadMiB <= 0
+                ) {
+                    status.textContent = "Enter valid positive limits.";
+                    saveButton.disabled = false;
+                    return;
+                }
+
+                try {
+                    const updateResponse = await fetch(
+                        `/admin/users/${user.id}/limits`,
+                        {
+                            method: "PATCH",
+                            headers: {
+                                "Authorization": `Bearer ${token}`,
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                storage_quota_bytes:
+                                    Math.round(storageQuota * 1_000_000_000),
+                                max_upload_size_bytes:
+                                    Math.round(maxUploadMiB * 1024 * 1024)
+                            })
+                        }
+                    );
+
+                    const result = await updateResponse.json();
+
+                    if (!updateResponse.ok) {
+                        status.textContent =
+                            result.detail || "Could not save limits.";
+                        return;
+                    }
+
+                    status.textContent = "Limits saved successfully.";
+                    await loadAdminUsers();
+                } catch (error) {
+                    status.textContent = "Could not connect to the server.";
+                    console.error(error);
+                } finally {
+                    saveButton.disabled = false;
+                }
+            });
+
+            card.append(heading, usage, form);
+            usersList.appendChild(card);
+        }
+    } catch (error) {
+        message.textContent = "Could not load administrator settings.";
+        console.error(error);
+    }
+}

@@ -29,7 +29,8 @@ def initialize_database():
                 password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 is_admin INTEGER NOT NULL DEFAULT 0,
-                storage_quota_bytes INTEGER NOT NULL DEFAULT 10000000000
+                storage_quota_bytes INTEGER NOT NULL DEFAULT 10000000000,
+                max_upload_size_bytes INTEGER NOT NULL DEFAULT 524288000
             )
             """
         )
@@ -64,6 +65,23 @@ def initialize_database():
                 ALTER TABLE users
                 ADD COLUMN storage_quota_bytes INTEGER NOT NULL
                 DEFAULT 10000000000
+                """
+            )
+
+        # Migrate existing databases to support individual upload limits.
+        user_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(users)"
+            ).fetchall()
+        }
+
+        if "max_upload_size_bytes" not in user_columns:
+            connection.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN max_upload_size_bytes INTEGER NOT NULL
+                DEFAULT 524288000
                 """
             )
 

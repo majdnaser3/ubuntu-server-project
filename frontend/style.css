@@ -488,3 +488,51 @@ body > p {
         font-size: 0.76rem;
     }
 }
+
+
+/* Administrator user-limit controls */
+#admin-section {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #ccc;
+}
+
+.admin-user-card {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+.admin-user-card h3 {
+    margin-top: 0;
+    overflow-wrap: anywhere;
+}
+
+.admin-user-card form {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.admin-user-card label {
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 600;
+}
+
+.admin-user-card input {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 320px;
+    padding: 0.6rem;
+}
+
+.admin-user-card button {
+    width: fit-content;
+}
+
+#admin-message,
+.admin-user-card [role="status"] {
+    overflow-wrap: anywhere;
+}
+
