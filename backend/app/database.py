@@ -16,6 +16,7 @@ def get_connection():
 
     return connection
 
+
 def initialize_database():
     connection = get_connection()
 
@@ -26,10 +27,45 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                storage_quota_bytes INTEGER NOT NULL DEFAULT 10000000000
             )
             """
         )
+
+        # Migrate existing databases to support administrator roles.
+        user_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(users)"
+            ).fetchall()
+        }
+
+        if "is_admin" not in user_columns:
+            connection.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0
+                """
+            )
+
+        # Migrate existing databases to support individual storage quotas.
+        user_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(users)"
+            ).fetchall()
+        }
+
+        if "storage_quota_bytes" not in user_columns:
+            connection.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN storage_quota_bytes INTEGER NOT NULL
+                DEFAULT 10000000000
+                """
+            )
 
         connection.execute(
             """

@@ -297,6 +297,7 @@ uploadForm.addEventListener("submit", async (event) => {
         return;
     }
 
+    
     const MAX_UPLOAD_SIZE_MB = 500;
     const maxUploadSizeBytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
@@ -305,6 +306,40 @@ uploadForm.addEventListener("submit", async (event) => {
             `File is too large. Maximum allowed size is ${MAX_UPLOAD_SIZE_MB} MiB.`;
         return;
     }
+
+    let storageData;
+
+    try {
+        const storageResponse = await fetch("/files/storage", {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        storageData = await storageResponse.json();
+
+        if (!storageResponse.ok) {
+            uploadMessage.textContent =
+                storageData.detail || "Could not check your storage quota.";
+            return;
+        }
+    } catch (error) {
+        uploadMessage.textContent =
+            "Could not check your storage quota. Please try again.";
+        console.error(error);
+        return;
+    }
+
+    if (file.size > storageData.remaining_bytes) {
+        const remainingMiB =
+            (storageData.remaining_bytes / (1024 * 1024)).toFixed(2);
+
+        uploadMessage.textContent =
+            `Not enough storage space. You have ${remainingMiB} MiB remaining.`;
+        return;
+    }
+
+
     const formData = new FormData();
     formData.append("uploaded_file", file);
 
@@ -411,3 +446,74 @@ document.querySelectorAll(".toggle-password").forEach((button) => {
         button.textContent = isHidden ? "Hide" : "Show";
     });
 });
+
+
+const setupButton = document.getElementById("show-setup");
+const setupSection = document.getElementById("setup-section");
+const setupForm = document.getElementById("setup-form");
+const setupMessage = document.getElementById("setup-message");
+
+async function checkSetupStatus() {
+    try {
+        const response = await fetch("/setup/status");
+        if (!response.ok) return;
+
+        const status = await response.json();
+
+        setupButton.hidden = !status.setup_required;
+
+        if (status.setup_required) {
+            setupButton.addEventListener("click", () => {
+                loginSection.hidden = true;
+                registerSection.hidden = true;
+                setupSection.hidden = false;
+            });
+        }
+    } catch (error) {
+        console.error("Could not check initial setup status:", error);
+    }
+}
+
+setupForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const setup_token = document.getElementById("setup-token").value;
+    const username = document.getElementById("setup-username").value.trim();
+    const password = document.getElementById("setup-password").value;
+
+    setupMessage.textContent = "Creating administrator...";
+
+    try {
+        const response = await fetch("/setup/admin", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ setup_token, username, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            setupMessage.textContent =
+                data.detail || "Administrator setup failed.";
+            return;
+        }
+
+        setupForm.reset();
+        setupSection.hidden = true;
+        setupButton.hidden = true;
+        loginSection.hidden = false;
+        registerSection.hidden = true;
+
+        document.getElementById("username").value = username;
+        document.getElementById("login-message").textContent =
+            "Administrator created. Please log in.";
+
+    } catch (error) {
+        setupMessage.textContent = "Could not connect to the server.";
+        console.error(error);
+    }
+});
+
+checkSetupStatus();

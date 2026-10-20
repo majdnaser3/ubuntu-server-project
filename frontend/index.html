@@ -14,7 +14,48 @@
 <div class="auth-tabs">
     <button type="button" id="show-login">Login</button>
     <button type="button" id="show-register">Create Account</button>
+    <button type="button" id="show-setup" hidden>
+        Initial Server Setup
+    </button>
 </div>
+
+<section id="setup-section" hidden>
+    <h2>Create Administrator</h2>
+    <p>Create the first administrator account for your private cloud.</p>
+
+    <form id="setup-form">
+        <label for="setup-token">Setup Token</label>
+        <input
+            type="password"
+            id="setup-token"
+            name="setup_token"
+            required
+        >
+
+        <label for="setup-username">Administrator Username</label>
+        <input
+            type="text"
+            id="setup-username"
+            name="username"
+            minlength="3"
+            maxlength="50"
+            required
+        >
+
+        <label for="setup-password">Administrator Password</label>
+        <input
+            type="password"
+            id="setup-password"
+            name="password"
+            minlength="8"
+            maxlength="128"
+            required
+        >
+
+        <button type="submit">Create Administrator</button>
+        <p id="setup-message"></p>
+    </form>
+</section>
 
 <section id="login-section">
     <h2>Login</h2>

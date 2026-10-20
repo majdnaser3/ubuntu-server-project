@@ -5,6 +5,7 @@ APP_VERSION = "0.1.0"
 APP_ENV = "development"
 
 SECRET_KEY = os.environ.get("UBUNTU_SERVER_SECRET_KEY")
+SETUP_TOKEN = os.environ.get("UBUNTU_SERVER_SETUP_TOKEN")
 
 if not SECRET_KEY:
     raise RuntimeError(
