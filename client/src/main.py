@@ -86,6 +86,7 @@ def upload_file_request(
     token: str,
     file_bytes: bytes | None = None,
     filename: str | None = None,
+    progress_queue=None,
 ):
     import http.client
     import mimetypes
@@ -145,12 +146,19 @@ def upload_file_request(
 
         connection.send(header)
 
+        uploaded = 0
+
         with open(file_path, "rb") as file:
             while True:
                 chunk = file.read(1024 * 1024)
                 if not chunk:
                     break
+
                 connection.send(chunk)
+                uploaded += len(chunk)
+
+                if progress_queue is not None:
+                    progress_queue.put((uploaded, file_size))
 
         connection.send(footer)
         response = connection.getresponse()
@@ -803,21 +811,71 @@ async def main(page: ft.Page):
                     return
 
 
-                snackbar = ft.SnackBar(
-                    content=ft.Text("Uploading file...")
-                )
-                page.overlay.append(snackbar)
-                snackbar.open = True
+                progress_queue = queue.Queue()
+                progress_bar = ft.ProgressBar(value=0)
+                progress_text = ft.Text("Uploading: 0%")
+
+                page.overlay.extend([progress_bar, progress_text])
                 page.update()
 
-                await asyncio.to_thread(
-                    upload_file_request,
-                    server_url,
-                    file_path,
-                    access_token,
-                    None,
-                    file.name,
+                upload_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        upload_file_request,
+                        server_url,
+                        file_path,
+                        access_token,
+                        None,
+                        file.name,
+                        progress_queue,
+                    )
                 )
+
+                uploaded = 0
+
+                try:
+                    while (
+                        not upload_task.done()
+                        or not progress_queue.empty()
+                    ):
+                        try:
+                            while True:
+                                uploaded, total_size = (
+                                    progress_queue.get_nowait()
+                                )
+                        except queue.Empty:
+                            pass
+
+                        if file_size > 0:
+                            progress_bar.value = min(
+                                uploaded / file_size, 1
+                            )
+                            progress_text.value = (
+                                f"Uploading: "
+                                f"{uploaded / file_size * 100:.0f}% "
+                                f"({uploaded / 1024**2:.1f} / "
+                                f"{file_size / 1024**2:.1f} MiB)"
+                            )
+                        else:
+                            progress_bar.value = (
+                                1 if upload_task.done() else 0
+                            )
+                            progress_text.value = (
+                                "Uploading empty file..."
+                            )
+
+                        page.update()
+                        await asyncio.sleep(0.1)
+
+                    await upload_task
+
+                finally:
+                    if progress_bar in page.overlay:
+                        page.overlay.remove(progress_bar)
+
+                    if progress_text in page.overlay:
+                        page.overlay.remove(progress_text)
+
+                    page.update()
 
                 snackbar = ft.SnackBar(
                     content=ft.Text("File uploaded successfully!")

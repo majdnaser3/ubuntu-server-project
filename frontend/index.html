@@ -96,6 +96,13 @@
 
 <section id="files-section" hidden>
     <h2>My Files</h2>
+
+    <section id="storage-section">
+        <h3>My Storage</h3>
+        <p id="storage-usage-text">Loading storage...</p>
+        <progress id="storage-usage-bar" value="0" max="100"></progress>
+        <p id="storage-remaining-text"></p>
+    </section>
     <button type="button" id="logout-button">Log Out</button>
     <form id="upload-form">
     <input type="file" id="file-input" name="uploaded_file" required>

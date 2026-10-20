@@ -119,14 +119,60 @@ document.getElementById("show-register").addEventListener("click", () => {
 const filesList = document.getElementById("files-list");
 const filesMessage = document.getElementById("files-message");
 
+async function loadStorage() {
+    const token = sessionStorage.getItem("access_token");
+
+    if (!token) return;
+
+    const usageText = document.getElementById("storage-usage-text");
+    const usageBar = document.getElementById("storage-usage-bar");
+    const remainingText = document.getElementById("storage-remaining-text");
+
+    try {
+        const response = await fetch("/files/storage", {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            usageText.textContent = "Could not load storage usage.";
+            return;
+        }
+
+        const used = data.used_bytes;
+        const quota = data.quota_bytes;
+        const remaining = data.remaining_bytes;
+        const percent = quota > 0 ? (used / quota) * 100 : 0;
+
+        usageText.textContent =
+            `${(used / 1_000_000_000).toFixed(2)} GB used of ` +
+            `${(quota / 1_000_000_000).toFixed(2)} GB`;
+
+        usageBar.value = Math.min(percent, 100);
+
+        remainingText.textContent =
+            `${(remaining / 1_000_000_000).toFixed(2)} GB remaining ` +
+            `(${percent.toFixed(1)}% used)`;
+
+    } catch (error) {
+        usageText.textContent = "Could not load storage usage.";
+        console.error(error);
+    }
+}
 
 async function loadFiles() {
     const token = sessionStorage.getItem("access_token");
 
-    if (!token) {
+        if (!token) {
         filesMessage.textContent = "Please log in first.";
         return;
     }
+
+    await loadStorage();
+    await loadAdminUsers();
 
     await loadAdminUsers();
 
