@@ -1,22 +1,34 @@
-import flet.testing as ftt
+
+import pytest
+
+from client.src.main import normalize_url
 
 
-async def test_increment(flet_app: ftt.FletTestApp):
-    """Counter sample: tap the FAB and assert the counter goes 0 -> 1.
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("http://192.168.1.100:8000", "http://192.168.1.100:8000"),
+        (" https://server.example.com/ ", "https://server.example.com"),
+        ("http://localhost:8000/", "http://localhost:8000"),
+    ],
+)
+def test_normalize_url_accepts_valid_urls(value, expected):
+    assert normalize_url(value) == expected
 
-    The `flet_app` fixture is provided automatically by the flet pytest plugin.
-    Run with `flet test` (or `uv run pytest`) from the project directory.
-    """
-    tester = flet_app.tester
 
-    await tester.pump_and_settle()
-
-    # Initial state
-    assert (await tester.find_by_text("0")).count == 1
-
-    # Tap the increment button (found by its key) and let the UI settle
-    await tester.tap(await tester.find_by_key("increment"))
-    await tester.pump_and_settle()
-
-    # New state
-    assert (await tester.find_by_text("1")).count == 1
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "192.168.1.100:8000",
+        "ftp://server.example.com",
+        "http://",
+        "http://user:password@example.com",
+        "http://example.com/path",
+        "http://example.com/?token=secret",
+        "http://example.com/#section",
+    ],
+)
+def test_normalize_url_rejects_invalid_urls(value):
+    with pytest.raises(ValueError):
+        normalize_url(value)
