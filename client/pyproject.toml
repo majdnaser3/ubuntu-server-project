@@ -1,11 +1,12 @@
+
 [project]
-name = "ubuntu-server-client"
-version = "0.1.0"
-description = "Ubuntu Server Project Client"
-readme = "README.md"
+name = "ubuntu_server_client"
+version = "1.0.0"
+description = "Ubuntu Server personal cloud client"
+# No separate client README
 requires-python = ">=3.10"
 authors = [
-    { name = "Flet developer", email = "you@example.com" }
+    { name = "Majd Naser" }
 ]
 dependencies = [
     "flet>=0.86.5"
@@ -16,8 +17,6 @@ dev = [
     "flet-cli>=0.86.5",
     "flet-desktop>=0.86.5",
     "flet-web>=0.86.5",
-    # Integration testing with `flet test` / pytest. The `test` extra brings in
-    # pytest, pytest-asyncio and the screenshot-comparison dependencies.
     "flet[test]>=0.86.5",
 ]
 
@@ -26,10 +25,35 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.flet]
-org = "com.mycompany"
-product = "ubuntu-server-client"
-company = "Flet"
-copyright = "Copyright (C) 2023-2026 by Flet"
+org = "com.majdnaser3"
+product = "Ubuntu Server"
+company = "Ubuntu Server Project"
+copyright = "Copyright (C) 2026"
+
+icon = "src/assets/icon.png"
+icon_background = "#0A1938"
 
 [tool.flet.app]
 path = "src"
+
+[tool.flet.splash]
+color = "#000000"
+dark_color = "#000000"
+
+[tool.flet.android]
+adaptive_icon_background = "#0A1938"
+
+[tool.flet.android.splash]
+color = "#000000"
+dark_color = "#000000"
+icon_background = "#000000"
+icon_dark_background = "#000000"
+
+[tool.flet.boot_screen.flet]
+theme_mode = "dark"
+bgcolor_light = "#000000"
+bgcolor_dark = "#000000"
+spinner_color_dark = "#2D91FF"
+spinner_color_light = "#2D91FF"
+text_color_light = "#FFFFFF"
+text_color_dark = "#FFFFFF"
